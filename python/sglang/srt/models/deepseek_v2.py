@@ -19,6 +19,7 @@ limitations under the License.
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 import torch
+from flashinfer import bmm_fp8
 from torch import nn
 from transformers import PretrainedConfig
 from vllm.config import CacheConfig
@@ -444,7 +445,14 @@ class DeepseekV2AttentionMLA(nn.Module):
             )
         q_nope, q_pe = q.split([self.qk_nope_head_dim, self.qk_rope_head_dim], dim=-1)
         q_nope_out = q_input[..., : self.kv_lora_rank]
-        torch.bmm(q_nope.transpose(0, 1), self.w_kc, out=q_nope_out.transpose(0, 1))
+        if self.w_kc.dtype == torch.float8_e4m3fn:
+            bmm_fp8(
+                q_nope.transpose(0, 1).to(torch.float8_e4m3fn),
+                self.w_kc,
+                q_nope_out.transpose(0, 1),
+            )
+        else:
+            torch.bmm(q_nope.transpose(0, 1), self.w_kc, out=q_nope_out.transpose(0, 1))
 
         latent_cache = self.kv_a_proj_with_mqa(hidden_states)[0]
         v_input = latent_cache[..., : self.kv_lora_rank]
@@ -462,11 +470,18 @@ class DeepseekV2AttentionMLA(nn.Module):
         attn_bmm_output = attn_output.new_empty(
             q_len, self.num_local_heads, self.v_head_dim
         )
-        torch.bmm(
-            attn_output.transpose(0, 1),
-            self.w_vc.transpose(1, 2).contiguous(),
-            out=attn_bmm_output.transpose(0, 1),
-        )
+        if self.w_vc.dtype == torch.float8_e4m3fn:
+            bmm_fp8(
+                attn_output.transpose(0, 1).to(torch.float8_e4m3fn),
+                self.w_vc.transpose(1, 2).contiguous(),
+                attn_bmm_output.transpose(0, 1),
+            )
+        else:
+            torch.bmm(
+                attn_output.transpose(0, 1),
+                self.w_vc.transpose(1, 2).contiguous(),
+                out=attn_bmm_output.transpose(0, 1),
+            )
 
         attn_output = attn_bmm_output.flatten(1, 2)
         output, _ = self.o_proj(attn_output)
