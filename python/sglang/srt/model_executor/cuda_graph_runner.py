@@ -312,7 +312,7 @@ class CudaGraphRunner:
         torch.cuda.synchronize()
         self.graphs[bs].replay()
         torch.cuda.synchronize()
-        sample_output, logits_output = self.output_buffers[bs]
+        logits_output = self.output_buffers[bs]
 
         # Unpad
         if bs != raw_bs:
@@ -324,11 +324,11 @@ class CudaGraphRunner:
                 input_top_logprobs=None,
                 output_top_logprobs=None,
             )
-            sample_output = SampleOutput(
-                sample_output.success[:raw_bs],
-                sample_output.probs[:raw_bs],
-                sample_output.batch_next_token_ids[:raw_bs],
-            )
+            # sample_output = SampleOutput(
+            #     sample_output.success[:raw_bs],
+            #     sample_output.probs[:raw_bs],
+            #     sample_output.batch_next_token_ids[:raw_bs],
+            # )
 
         # Extract logprobs
         if batch.return_logprob:
@@ -345,4 +345,4 @@ class CudaGraphRunner:
                     logits_output.next_token_logprobs, logits_metadata
                 )[1]
 
-        return sample_output, logits_output
+        return logits_output
